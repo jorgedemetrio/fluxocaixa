@@ -1,0 +1,54 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.0.0
+MinimumVisualStudioVersion = 10.0.40219.1
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Shared.Kernel", "src\FluxoCaixa.Shared\FluxoCaixa.Shared.Kernel\FluxoCaixa.Shared.Kernel.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Lancamentos.Domain", "src\FluxoCaixa.Lancamentos\FluxoCaixa.Lancamentos.Domain\FluxoCaixa.Lancamentos.Domain.csproj", "{B1C2D3E4-F5A6-7890-BCDE-F12345678901}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Lancamentos.Application", "src\FluxoCaixa.Lancamentos\FluxoCaixa.Lancamentos.Application\FluxoCaixa.Lancamentos.Application.csproj", "{C1D2E3F4-A5B6-7890-CDEF-123456789012}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Lancamentos.Infrastructure", "src\FluxoCaixa.Lancamentos\FluxoCaixa.Lancamentos.Infrastructure\FluxoCaixa.Lancamentos.Infrastructure.csproj", "{D1E2F3A4-B5C6-7890-DEF0-234567890123}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Lancamentos.API", "src\FluxoCaixa.Lancamentos\FluxoCaixa.Lancamentos.API\FluxoCaixa.Lancamentos.API.csproj", "{E1F2A3B4-C5D6-7890-EF01-345678901234}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Consolidado.Domain", "src\FluxoCaixa.Consolidado\FluxoCaixa.Consolidado.Domain\FluxoCaixa.Consolidado.Domain.csproj", "{F1A2B3C4-D5E6-7890-F012-456789012345}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Consolidado.Application", "src\FluxoCaixa.Consolidado\FluxoCaixa.Consolidado.Application\FluxoCaixa.Consolidado.Application.csproj", "{A2B3C4D5-E6F1-7890-0123-567890123456}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Consolidado.Infrastructure", "src\FluxoCaixa.Consolidado\FluxoCaixa.Consolidado.Infrastructure\FluxoCaixa.Consolidado.Infrastructure.csproj", "{B2C3D4E5-F6A1-7890-1234-678901234567}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Consolidado.API", "src\FluxoCaixa.Consolidado\FluxoCaixa.Consolidado.API\FluxoCaixa.Consolidado.API.csproj", "{C2D3E4F5-A6B1-7890-2345-789012345678}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Lancamentos.UnitTests", "tests\FluxoCaixa.Lancamentos.UnitTests\FluxoCaixa.Lancamentos.UnitTests.csproj", "{D2E3F4A5-B6C1-7890-3456-890123456789}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Consolidado.UnitTests", "tests\FluxoCaixa.Consolidado.UnitTests\FluxoCaixa.Consolidado.UnitTests.csproj", "{E2F3A4B5-C6D1-7890-4567-901234567890}"
+EndProject
+
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FluxoCaixa.Integration.Tests", "tests\FluxoCaixa.Integration.Tests\FluxoCaixa.Integration.Tests.csproj", "{F2A3B4C5-D6E1-7890-5678-012345678901}"
+EndProject
+
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fluxo de Caixa</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f4f8; color: #1a202c; }
+
+    header {
+      background: linear-gradient(135deg, #2d3748, #4a5568);
+      color: white; padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header nav a { color: #e2e8f0; text-decoration: none; margin-left: 1.5rem; font-size: 0.9rem; }
+    header nav a:hover { color: #63b3ed; }
+
+    .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .card {
+      background: white; border-radius: 12px; padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #4299e1;
+    }
+    .card.credito { border-color: #48bb78; }
+    .card.debito { border-color: #fc8181; }
+    .card.saldo { border-color: #9f7aea; }
+    .card label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #718096; }
+    .card .value { font-size: 1.8rem; font-weight: 700; margin-top: 0.3rem; }
+    .card.credito .value { color: #38a169; }
+    .card.debito .value { color: #e53e3e; }
+    .card.saldo .value { color: #553c9a; }
+
+    .panel { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1.5rem; }
+    .panel h2 { font-size: 1rem; font-weight: 600; color: #2d3748; margin-bottom: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; }
+
+    .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .form-group label { display: block; font-size: 0.8rem; color: #4a5568; margin-bottom: 0.3rem; font-weight: 500; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #e2e8f0;
+      border-radius: 6px; font-size: 0.9rem; transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus { outline: none; border-color: #4299e1; box-shadow: 0 0 0 3px rgba(66,153,225,0.15); }
+
+    .tipo-buttons { display: flex; gap: 0.5rem; }
+    .tipo-btn {
+      flex: 1; padding: 0.5rem; border: 2px solid #e2e8f0;
+      background: white; border-radius: 6px; cursor: pointer; font-weight: 600;
+      transition: all 0.2s;
+    }
+    .tipo-btn.credito.active { border-color: #48bb78; background: #f0fff4; color: #276749; }
+    .tipo-btn.debito.active { border-color: #fc8181; background: #fff5f5; color: #9b2c2c; }
+
+    .btn {
+      padding: 0.6rem 1.5rem; border: none; border-radius: 6px;
+      cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: all 0.2s;
+    }
+    .btn-primary { background: #4299e1; color: white; }
+    .btn-primary:hover { background: #3182ce; }
+    .btn-danger { background: #fc8181; color: white; font-size: 0.75rem; padding: 0.3rem 0.75rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { background: #f7fafc; padding: 0.75rem; text-align: left; font-size: 0.75rem; text-transform: uppercase; color: #718096; letter-spacing: 0.05em; }
+    td { padding: 0.75rem; border-top: 1px solid #f0f4f8; }
+    tr:hover td { background: #f7fafc; }
+    .badge { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 600; }
+    .badge-credito { background: #c6f6d5; color: #276749; }
+    .badge-debito { background: #fed7d7; color: #9b2c2c; }
+    .badge-ativo { background: #bee3f8; color: #2b6cb0; }
+    .badge-cancelado { background: #feebc8; color: #c05621; }
+
+    .alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
+    .alert-success { background: #f0fff4; border: 1px solid #9ae6b4; color: #276749; }
+    .alert-error { background: #fff5f5; border: 1px solid #feb2b2; color: #9b2c2c; }
+
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #e2e8f0; border-top-color: #4299e1; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .filter-bar { display: flex; gap: 0.75rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem; }
+
+    footer { text-align: center; padding: 2rem; color: #718096; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fluxo de Caixa</h1>
+    <nav>
+      <a href="#" onclick="showSection('dashboard')" data-testid="menu-dashboard">Dashboard</a>
+      <a href="#" onclick="showSection('lancamentos')" data-testid="menu-lancamentos">Lançamentos</a>
+      <a href="#" onclick="showSection('consolidado')" data-testid="menu-consolidado">Consolidado</a>
+      <a href="#" data-testid="btn-logout">Sair</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div id="alert-container"></div>
+
+    <!-- Dashboard -->
+    <div id="section-dashboard">
+      <div class="cards">
+        <div class="card credito">
+          <label>Total Créditos Hoje</label>
+          <div class="value" data-testid="total-creditos" id="card-creditos">R$ 0,00</div>
+        </div>
+        <div class="card debito">
+          <label>Total Débitos Hoje</label>
+          <div class="value" data-testid="total-debitos" id="card-debitos">R$ 0,00</div>
+        </div>
+        <div class="card saldo">
+          <label>Saldo do Dia</label>
+          <div class="value" data-testid="saldo-final" id="card-saldo">R$ 0,00</div>
+        </div>
+        <div class="card">
+          <label>Lançamentos Hoje</label>
+          <div class="value" id="card-qtd">0</div>
+        </div>
+      </div>
+
+      <div class="panel" data-testid="card-consolidado">
+        <h2>Resumo do Dia — <span id="data-hoje"></span></h2>
+        <p style="color:#718096;font-size:0.85rem;">Dados atualizados em tempo real via consolidado diário.</p>
+        <div data-testid="data-consolidado" id="data-consolidado-display" style="margin-top:0.5rem;font-weight:600;"></div>
+      </div>
+    </div>
+
+    <!-- Lançamentos -->
+    <div id="section-lancamentos" style="display:none">
+      <div class="panel">
+        <h2>Novo Lançamento</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tipo</label>
+            <div class="tipo-buttons">
+              <button class="tipo-btn credito active" data-testid="tipo-credito" onclick="setTipo('Credito')">+ Crédito</button>
+              <button class="tipo-btn debito" data-testid="tipo-debito" onclick="setTipo('Debito')">- Débito</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Valor (R$)</label>
+            <input type="number" id="novo-valor" data-testid="valor" placeholder="0,00" min="0.01" step="0.01" />
+          </div>
+          <div class="form-group">
+            <label>Data</label>
+            <input type="date" id="novo-data" data-testid="data" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Descrição</label>
+            <input type="text" id="novo-descricao" data-testid="descricao" placeholder="Descreva o lançamento..." />
+          </div>
+        </div>
+        <div id="form-error" class="alert alert-error" style="display:none"></div>
+        <button class="btn btn-primary" data-testid="btn-salvar" onclick="criarLancamento()">Salvar Lançamento</button>
+      </div>
+
+      <div class="panel">
+        <h2>Lançamentos</h2>
+        <div class="filter-bar">
+          <div class="form-group">
+            <label>Data início</label>
+            <input type="date" id="filtro-data-inicio" data-testid="filtro-data-inicio" />
+          </div>
+          <div class="form-group">
+            <label>Data fim</label>
+            <input type="date" id="filtro-data-fim" />
+          </div>
+          <button class="btn btn-primary" data-testid="btn-filtrar" onclick="buscarLancamentos()">Filtrar</button>
+        </div>
+        <div id="loading-lancamentos" style="display:none"><div class="loading"></div> Carregando...</div>
+        <div id="tabela-lancamentos-container" data-testid="tabela-lancamentos">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th><th>Tipo</th><th>Valor</th><th>Descrição</th><th>Status</th><th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-lancamentos"></tbody>
+          </table>
+        </div>
+        <div data-testid="paginacao" id="paginacao" style="margin-top:1rem;text-align:center;font-size:0.85rem;color:#718096;">
+          <span data-testid="total-count" id="total-count"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Consolidado -->
+    <div id="section-consolidado" style="display:none">
+      <div class="panel">
+        <h2>Consolidado Diário</h2>
+        <div class="filter-bar">
+          <div class="form-group">
+            <label>Data</label>
+            <input type="date" id="filtro-consolidado-data" data-testid="filtro-data" />
+          </div>
+          <button class="btn btn-primary" data-testid="btn-consultar" onclick="buscarConsolidado()">Consultar</button>
+        </div>
+        <div id="resultado-consolidado"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Histórico</h2>
+        <div class="filter-bar">
+          <div class="form-group">
+            <label>Início</label>
+            <input type="date" id="filtro-hist-inicio" data-testid="filtro-inicio" />
+          </div>
+          <div class="form-group">
+            <label>Fim</label>
+            <input type="date" id="filtro-hist-fim" data-testid="filtro-fim" />
+          </div>
+          <button class="btn btn-primary" data-testid="btn-filtrar" onclick="buscarHistorico()">Ver Histórico</button>
+        </div>
+        <div id="tabela-historico-container" data-testid="tabela-historico" style="display:none">
+          <table>
+            <thead>
+              <tr><th>Data</th><th>Créditos</th><th>Débitos</th><th>Saldo do Dia</th><th>Saldo Acumulado</th></tr>
+            </thead>
+            <tbody id="tbody-historico"></tbody>
+          </table>
+          <div data-testid="resumo-periodo" id="resumo-periodo" style="margin-top:1rem;padding:1rem;background:#f7fafc;border-radius:6px;font-size:0.85rem;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>Fluxo de Caixa &copy; 2024 — C# .NET 8 | CQRS | DDD | EDA</footer>
+
+  <script>
+    const API_LANCAMENTOS = 'http://localhost:5001/api';
+    const API_CONSOLIDADO = 'http://localhost:5002/api';
+    let tipoAtual = 'Credito';
+    let token = localStorage.getItem('token') || 'dev-token';
+
+    function fmt(v) { return new Intl.NumberFormat('pt-BR', {style:'currency',currency:'BRL'}).format(v); }
+    function today() { return new Date().toISOString().split('T')[0]; }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('novo-data').value = today();
+      document.getElementById('filtro-data-inicio').value = today();
+      document.getElementById('filtro-consolidado-data').value = today();
+      document.getElementById('data-hoje').textContent = new Date().toLocaleDateString('pt-BR');
+      document.getElementById('data-consolidado-display').textContent = new Date().toLocaleDateString('pt-BR');
+
+      const fim = new Date(); fim.setDate(fim.getDate() - 30);
+      document.getElementById('filtro-hist-inicio').value = fim.toISOString().split('T')[0];
+      document.getElementById('filtro-hist-fim').value = today();
+
+      carregarDashboard();
+    });
+
+    function showSection(name) {
+      ['dashboard','lancamentos','consolidado'].forEach(s =>
+        document.getElementById(`section-${s}`).style.display = s === name ? '' : 'none');
+      if (name === 'lancamentos') buscarLancamentos();
+    }
+
+    function setTipo(tipo) {
+      tipoAtual = tipo;
+      document.querySelectorAll('.tipo-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.tipo-btn.${tipo.toLowerCase()}`).classList.add('active');
+    }
+
+    function showAlert(msg, type = 'success') {
+      const el = document.getElementById('alert-container');
+      el.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+      setTimeout(() => el.innerHTML = '', 4000);
+    }
+
+    async function apiFetch(url, opts = {}) {
+      return fetch(url, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) }
+      });
+    }
+
+    async function carregarDashboard() {
+      try {
+        const r = await apiFetch(`${API_CONSOLIDADO}/consolidado/${today()}`);
+        if (r.ok) {
+          const d = await r.json();
+          document.getElementById('card-creditos').textContent = fmt(d.totalCreditos);
+          document.getElementById('card-debitos').textContent = fmt(d.totalDebitos);
+          document.getElementById('card-saldo').textContent = fmt(d.saldoFinal);
+          document.getElementById('card-qtd').textContent = d.qtdLancamentos;
+        }
+      } catch (e) { console.warn('Dashboard: serviço de consolidado offline', e); }
+    }
+
+    async function criarLancamento() {
+      const valor = parseFloat(document.getElementById('novo-valor').value);
+      const descricao = document.getElementById('novo-descricao').value;
+      const data = document.getElementById('novo-data').value;
+      const errEl = document.getElementById('form-error');
+      errEl.style.display = 'none';
+
+      if (!valor || valor <= 0) { errEl.textContent = 'Valor deve ser maior que zero'; errEl.style.display = ''; return; }
+      if (!descricao || descricao.length < 3) { errEl.textContent = 'Descrição é obrigatória (mínimo 3 caracteres)'; errEl.style.display = ''; return; }
+      if (!data) { errEl.textContent = 'Data é obrigatória'; errEl.style.display = ''; return; }
+
+      try {
+        const r = await apiFetch(`${API_LANCAMENTOS}/lancamentos`, {
+          method: 'POST',
+          body: JSON.stringify({ tipo: tipoAtual, valor, descricao, data })
+        });
+        const d = await r.json();
+        if (r.ok) {
+          showAlert('Lançamento registrado com sucesso!');
+          document.getElementById('novo-valor').value = '';
+          document.getElementById('novo-descricao').value = '';
+          carregarDashboard();
+        } else {
+          errEl.textContent = d.error || 'Erro ao criar lançamento';
+          errEl.style.display = '';
+        }
+      } catch (e) { errEl.textContent = 'Erro de conexão com a API'; errEl.style.display = ''; }
+    }
+
+    async function buscarLancamentos() {
+      const dataInicio = document.getElementById('filtro-data-inicio').value || today();
+      document.getElementById('loading-lancamentos').style.display = '';
+      try {
+        const r = await apiFetch(`${API_LANCAMENTOS}/lancamentos?dataInicio=${dataInicio}&pageSize=50`);
+        const d = await r.json();
+        document.getElementById('loading-lancamentos').style.display = 'none';
+        if (r.ok) {
+          const tbody = document.getElementById('tbody-lancamentos');
+          tbody.innerHTML = (d.items || []).map(l => `
+            <tr data-testid="lancamento-row">
+              <td>${l.data}</td>
+              <td><span class="badge badge-${l.tipo.toLowerCase()}">${l.tipo}</span></td>
+              <td><strong>${fmt(l.valor)}</strong></td>
+              <td>${l.descricao}</td>
+              <td><span class="badge badge-${l.status.toLowerCase()}">${l.status}</span></td>
+              <td>${l.status === 'ATIVO'
+                ? `<button class="btn btn-danger" data-testid="btn-cancelar" onclick="cancelar('${l.id}')">Cancelar</button>`
+                : '—'}</td>
+            </tr>`).join('');
+          document.getElementById('total-count').textContent = `${d.totalCount || 0} lançamento(s)`;
+        }
+      } catch (e) { document.getElementById('loading-lancamentos').style.display = 'none'; }
+    }
+
+    async function cancelar(id) {
+      const motivo = prompt('Informe o motivo do cancelamento (mínimo 10 caracteres):');
+      if (!motivo || motivo.length < 10) { alert('Motivo deve ter no mínimo 10 caracteres'); return; }
+      try {
+        const r = await apiFetch(`${API_LANCAMENTOS}/lancamentos/${id}`, {
+          method: 'DELETE', body: JSON.stringify({ motivo })
+        });
+        if (r.ok) { showAlert('Cancelado com sucesso'); buscarLancamentos(); }
+        else { const d = await r.json(); showAlert(d.error || 'Erro ao cancelar', 'error'); }
+      } catch (e) { showAlert('Erro de conexão', 'error'); }
+    }
+
+    async function buscarConsolidado() {
+      const data = document.getElementById('filtro-consolidado-data').value || today();
+      try {
+        const r = await apiFetch(`${API_CONSOLIDADO}/consolidado/${data}`);
+        const d = await r.json();
+        const el = document.getElementById('resultado-consolidado');
+        if (r.ok) {
+          el.innerHTML = `
+            <div class="cards" style="margin-top:1rem">
+              <div class="card credito"><label>Créditos</label><div class="value">${fmt(d.totalCreditos)}</div></div>
+              <div class="card debito"><label>Débitos</label><div class="value">${fmt(d.totalDebitos)}</div></div>
+              <div class="card saldo"><label>Saldo Final</label><div class="value">${fmt(d.saldoFinal)}</div></div>
+              <div class="card"><label>Lançamentos</label><div class="value">${d.qtdLancamentos}</div></div>
+            </div>`;
+        } else { el.innerHTML = `<div class="alert alert-error">${d.error || 'Erro'}</div>`; }
+      } catch (e) { document.getElementById('resultado-consolidado').innerHTML = '<div class="alert alert-error">Erro de conexão</div>'; }
+    }
+
+    async function buscarHistorico() {
+      const inicio = document.getElementById('filtro-hist-inicio').value;
+      const fim = document.getElementById('filtro-hist-fim').value;
+      if (!inicio || !fim) { alert('Informe o período'); return; }
+      try {
+        const r = await apiFetch(`${API_CONSOLIDADO}/consolidado/historico?dataInicio=${inicio}&dataFim=${fim}`);
+        const d = await r.json();
+        if (r.ok) {
+          const tbody = document.getElementById('tbody-historico');
+          tbody.innerHTML = d.consolidados.map(c => `
+            <tr>
+              <td>${c.data}</td>
+              <td style="color:#38a169">${fmt(c.totalCreditos)}</td>
+              <td style="color:#e53e3e">${fmt(c.totalDebitos)}</td>
+              <td><strong>${fmt(c.saldoFinal)}</strong></td>
+              <td>${fmt(c.saldoAcumulado)}</td>
+            </tr>`).join('');
+          document.getElementById('resumo-periodo').innerHTML = `
+            <strong>Resumo do Período:</strong>
+            Total Créditos: <strong style="color:#38a169">${fmt(d.totalCreditosPeriodo)}</strong> |
+            Total Débitos: <strong style="color:#e53e3e">${fmt(d.totalDebitosPeriodo)}</strong> |
+            Saldo Líquido: <strong style="color:#553c9a">${fmt(d.saldoLiquidoPeriodo)}</strong>`;
+          document.getElementById('tabela-historico-container').style.display = '';
+        }
+      } catch (e) { alert('Erro de conexão'); }
+    }
+  </script>
+</body>
+</html>

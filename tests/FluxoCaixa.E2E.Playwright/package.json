@@ -1,0 +1,15 @@
+{
+  "name": "fluxo-caixa-e2e",
+  "version": "1.0.0",
+  "description": "Testes E2E com Playwright para o sistema Fluxo de Caixa",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:ui": "npx playwright test --ui",
+    "test:headed": "npx playwright test --headed",
+    "test:report": "npx playwright show-report",
+    "codegen": "npx playwright codegen http://localhost:4200"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

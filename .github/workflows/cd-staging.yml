@@ -1,0 +1,164 @@
+name: CD - Deploy Staging
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECS_CLUSTER_STAGING: fluxocaixa-staging
+  LANCAMENTOS_SERVICE: fc-lancamentos-staging
+  CONSOLIDADO_SERVICE: fc-consolidado-staging
+
+jobs:
+  deploy-staging:
+    name: Build, Push & Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tags
+        id: tags
+        run: |
+          echo "sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          echo "lancamentos_image=${{ env.ECR_REGISTRY }}/fc-lancamentos:${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+          echo "consolidado_image=${{ env.ECR_REGISTRY }}/fc-consolidado:${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+
+      # ─── Build & Push - Lançamentos ────────────────────────
+      - name: Build Lançamentos image
+        run: |
+          docker build \
+            -f src/FluxoCaixa.Lancamentos/FluxoCaixa.Lancamentos.API/Dockerfile \
+            -t ${{ steps.tags.outputs.lancamentos_image }} \
+            -t ${{ env.ECR_REGISTRY }}/fc-lancamentos:staging-latest \
+            .
+
+      - name: Security scan - Lançamentos image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.tags.outputs.lancamentos_image }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Push Lançamentos image
+        run: |
+          docker push ${{ steps.tags.outputs.lancamentos_image }}
+          docker push ${{ env.ECR_REGISTRY }}/fc-lancamentos:staging-latest
+
+      # ─── Build & Push - Consolidado ────────────────────────
+      - name: Build Consolidado image
+        run: |
+          docker build \
+            -f src/FluxoCaixa.Consolidado/FluxoCaixa.Consolidado.API/Dockerfile \
+            -t ${{ steps.tags.outputs.consolidado_image }} \
+            -t ${{ env.ECR_REGISTRY }}/fc-consolidado:staging-latest \
+            .
+
+      - name: Security scan - Consolidado image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.tags.outputs.consolidado_image }}
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push Consolidado image
+        run: |
+          docker push ${{ steps.tags.outputs.consolidado_image }}
+          docker push ${{ env.ECR_REGISTRY }}/fc-consolidado:staging-latest
+
+      # ─── Deploy ECS ────────────────────────────────────────
+      - name: Deploy Lançamentos to ECS Staging
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --service ${{ env.LANCAMENTOS_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy Consolidado to ECS Staging
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --service ${{ env.CONSOLIDADO_SERVICE }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Lançamentos deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --services ${{ env.LANCAMENTOS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Wait for Consolidado deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER_STAGING }} \
+            --services ${{ env.CONSOLIDADO_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
+
+      # ─── Smoke Tests ───────────────────────────────────────
+      - name: Smoke test - Lançamentos health
+        run: |
+          curl -f https://staging-api.fluxocaixa.com.br/lancamentos/health \
+            || (echo "Health check falhou!" && exit 1)
+
+      - name: Smoke test - Consolidado health
+        run: |
+          curl -f https://staging-api.fluxocaixa.com.br/consolidado/health \
+            || (echo "Health check falhou!" && exit 1)
+
+      # ─── Playwright E2E ────────────────────────────────────
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        working-directory: tests/FluxoCaixa.E2E.Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run E2E tests against staging
+        working-directory: tests/FluxoCaixa.E2E.Playwright
+        env:
+          BASE_URL: https://staging.fluxocaixa.com.br
+        run: npx playwright test --project=chromium
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-staging
+          path: tests/FluxoCaixa.E2E.Playwright/playwright-report/
+          retention-days: 7
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text": "❌ Deploy Staging FALHOU: ${{ github.workflow }} - ${{ github.ref }}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

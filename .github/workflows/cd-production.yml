@@ -1,0 +1,176 @@
+name: CD - Deploy Production
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versão para deploy (ex: v1.2.3)'
+        required: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  ECS_CLUSTER_PROD: fluxocaixa-production
+  LANCAMENTOS_SERVICE: fc-lancamentos-prod
+  CONSOLIDADO_SERVICE: fc-consolidado-prod
+
+jobs:
+  # ─── Aprovação Manual ──────────────────────────────────────
+  approval:
+    name: Aprovação para Produção
+    runs-on: ubuntu-latest
+    environment: production  # Requer reviewers configurados no GitHub
+    steps:
+      - name: Aguardando aprovação
+        run: echo "Deploy aprovado para ${{ github.ref_name }}"
+
+  # ─── Deploy Blue/Green ────────────────────────────────────
+  deploy-production:
+    name: Deploy Blue/Green Production
+    runs-on: ubuntu-latest
+    needs: approval
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_PROD_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set version tag
+        id: version
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "lancamentos_image=${{ env.ECR_REGISTRY }}/fc-lancamentos:${VERSION}" >> $GITHUB_OUTPUT
+          echo "consolidado_image=${{ env.ECR_REGISTRY }}/fc-consolidado:${VERSION}" >> $GITHUB_OUTPUT
+
+      # Reutiliza imagens já buildadas e testadas no staging
+      - name: Re-tag images from staging to production
+        run: |
+          # Pull da imagem de staging
+          docker pull ${{ env.ECR_REGISTRY }}/fc-lancamentos:staging-latest
+          docker pull ${{ env.ECR_REGISTRY }}/fc-consolidado:staging-latest
+
+          # Re-tag com versão de produção
+          docker tag ${{ env.ECR_REGISTRY }}/fc-lancamentos:staging-latest \
+            ${{ steps.version.outputs.lancamentos_image }}
+          docker tag ${{ env.ECR_REGISTRY }}/fc-consolidado:staging-latest \
+            ${{ steps.version.outputs.consolidado_image }}
+
+          # Push das imagens de produção
+          docker push ${{ steps.version.outputs.lancamentos_image }}
+          docker push ${{ steps.version.outputs.consolidado_image }}
+
+          # Atualiza latest de produção
+          docker tag ${{ steps.version.outputs.lancamentos_image }} \
+            ${{ env.ECR_REGISTRY }}/fc-lancamentos:production-latest
+          docker tag ${{ steps.version.outputs.consolidado_image }} \
+            ${{ env.ECR_REGISTRY }}/fc-consolidado:production-latest
+          docker push ${{ env.ECR_REGISTRY }}/fc-lancamentos:production-latest
+          docker push ${{ env.ECR_REGISTRY }}/fc-consolidado:production-latest
+
+      # ─── Blue/Green Deploy ─────────────────────────────────
+      - name: Update ECS Task Definition - Lançamentos
+        id: task-def-lancamentos
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infrastructure/task-definitions/lancamentos-prod.json
+          container-name: lancamentos-api
+          image: ${{ steps.version.outputs.lancamentos_image }}
+
+      - name: Deploy Lançamentos (Blue/Green via CodeDeploy)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-lancamentos.outputs.task-definition }}
+          service: ${{ env.LANCAMENTOS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER_PROD }}
+          wait-for-service-stability: true
+          codedeploy-appspec: infrastructure/appspec/lancamentos.yaml
+          codedeploy-application: FluxoCaixa-Lancamentos
+          codedeploy-deployment-group: FluxoCaixa-Lancamentos-BlueGreen
+
+      - name: Update ECS Task Definition - Consolidado
+        id: task-def-consolidado
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: infrastructure/task-definitions/consolidado-prod.json
+          container-name: consolidado-api
+          image: ${{ steps.version.outputs.consolidado_image }}
+
+      - name: Deploy Consolidado (Blue/Green via CodeDeploy)
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def-consolidado.outputs.task-definition }}
+          service: ${{ env.CONSOLIDADO_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER_PROD }}
+          wait-for-service-stability: true
+          codedeploy-appspec: infrastructure/appspec/consolidado.yaml
+          codedeploy-application: FluxoCaixa-Consolidado
+          codedeploy-deployment-group: FluxoCaixa-Consolidado-BlueGreen
+
+      # ─── Monitoramento Pós-Deploy ──────────────────────────
+      - name: Monitor deployment (30 min)
+        run: |
+          echo "Monitorando métricas por 30 minutos..."
+          for i in {1..6}; do
+            echo "Verificação $i/6 ($(date))"
+
+            # Health checks
+            curl -f https://api.fluxocaixa.com.br/lancamentos/health || exit 1
+            curl -f https://api.fluxocaixa.com.br/consolidado/health || exit 1
+
+            # Verifica CloudWatch alarms
+            ALARMS=$(aws cloudwatch describe-alarms \
+              --state-value ALARM \
+              --alarm-name-prefix "FluxoCaixa-" \
+              --query 'MetricAlarms[].AlarmName' \
+              --output text)
+
+            if [ -n "$ALARMS" ]; then
+              echo "ALERTA: Alarmes ativos detectados: $ALARMS"
+              exit 1
+            fi
+
+            echo "✅ Verificação $i OK"
+            [ $i -lt 6 ] && sleep 300  # 5 minutos entre verificações
+          done
+          echo "✅ Deploy monitorado com sucesso por 30 minutos"
+
+      # ─── Notificações ──────────────────────────────────────
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          generateReleaseNotes: true
+          makeLatest: true
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text": "✅ Deploy Produção OK: ${{ steps.version.outputs.version }} - ${{ github.actor }}"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.27.0
+        with:
+          payload: |
+            {"text": "🚨 DEPLOY PRODUÇÃO FALHOU: ${{ steps.version.outputs.version }} - Rollback pode ser necessário!"}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

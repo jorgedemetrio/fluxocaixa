@@ -1,0 +1,150 @@
+version: '3.9'
+
+services:
+  # ─── Bancos de Dados ─────────────────────────────────────
+  postgres-lancamentos:
+    image: postgres:16-alpine
+    container_name: fc-postgres-lancamentos
+    environment:
+      POSTGRES_DB: fluxocaixa_lancamentos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_lancamentos_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fluxocaixa-net
+
+  postgres-consolidado:
+    image: postgres:16-alpine
+    container_name: fc-postgres-consolidado
+    environment:
+      POSTGRES_DB: fluxocaixa_consolidado
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_consolidado_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fluxocaixa-net
+
+  # ─── Redis Cache ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fc-redis
+    command: redis-server --appendonly yes --requirepass redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fluxocaixa-net
+
+  # ─── Mensageria (ElasticMQ emula SQS localmente) ─────────
+  elasticmq:
+    image: softwaremill/elasticmq-native:latest
+    container_name: fc-elasticmq
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./infrastructure/elasticmq.conf:/opt/elasticmq.conf
+    networks:
+      - fluxocaixa-net
+
+  # ─── Serviço de Lançamentos ───────────────────────────────
+  lancamentos-api:
+    build:
+      context: .
+      dockerfile: src/FluxoCaixa.Lancamentos/FluxoCaixa.Lancamentos.API/Dockerfile
+    container_name: fc-lancamentos-api
+    ports:
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres-lancamentos;Port=5432;Database=fluxocaixa_lancamentos;Username=postgres;Password=postgres
+      - Sqs__QueueUrl=http://elasticmq:9324/000000000000/lancamentos-eventos
+      - AWS__ServiceURL=http://elasticmq:9324
+      - AWS__Region=us-east-1
+      - Jwt__Issuer=fluxocaixa-dev
+      - Jwt__Audience=fluxocaixa-dev
+      - Jwt__Secret=dev-secret-must-be-at-least-32-chars-long!!
+    depends_on:
+      postgres-lancamentos:
+        condition: service_healthy
+      elasticmq:
+        condition: service_started
+    networks:
+      - fluxocaixa-net
+    restart: unless-stopped
+
+  # ─── Serviço de Consolidado ───────────────────────────────
+  consolidado-api:
+    build:
+      context: .
+      dockerfile: src/FluxoCaixa.Consolidado/FluxoCaixa.Consolidado.API/Dockerfile
+    container_name: fc-consolidado-api
+    ports:
+      - "5002:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - ConnectionStrings__DefaultConnection=Host=postgres-consolidado;Port=5432;Database=fluxocaixa_consolidado;Username=postgres;Password=postgres
+      - ConnectionStrings__Redis=redis:6379,password=redis_password
+      - Sqs__QueueUrl=http://elasticmq:9324/000000000000/lancamentos-eventos
+      - AWS__ServiceURL=http://elasticmq:9324
+      - AWS__Region=us-east-1
+      - Jwt__Issuer=fluxocaixa-dev
+      - Jwt__Audience=fluxocaixa-dev
+      - Jwt__Secret=dev-secret-must-be-at-least-32-chars-long!!
+    depends_on:
+      postgres-consolidado:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticmq:
+        condition: service_started
+    networks:
+      - fluxocaixa-net
+    restart: unless-stopped
+
+  # ─── Frontend ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fc-frontend
+    ports:
+      - "4200:80"
+    depends_on:
+      - lancamentos-api
+      - consolidado-api
+    networks:
+      - fluxocaixa-net
+
+volumes:
+  postgres_lancamentos_data:
+  postgres_consolidado_data:
+  redis_data:
+
+networks:
+  fluxocaixa-net:
+    driver: bridge
